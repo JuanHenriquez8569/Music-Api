@@ -2,7 +2,7 @@ import threading
 import requests
 from io import BytesIO
 import customtkinter as ctk
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from api.musicbrainz_service import MusicBrainzService
 from api.audiodb_service import AudioDBService
@@ -10,7 +10,6 @@ from api.lyrics_service import LyricsService
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
-
 
 class AppWindow(ctk.CTk):
     def __init__(self):
@@ -31,17 +30,15 @@ class AppWindow(ctk.CTk):
         search_frame = ctk.CTkFrame(self, corner_radius=15)
         search_frame.pack(fill="x", padx=20, pady=15)
 
-        ctk.CTkLabel(search_frame, text="🎵 Music Hub", font=("Helvetica", 22, "bold")).pack(side="left", padx=15,
-                                                                                            pady=10)
+        ctk.CTkLabel(search_frame, text="🎵 Music Hub", font=("Helvetica", 22, "bold")).pack(side="left", padx=15, pady=10)
 
-        self.entry_artist = ctk.CTkEntry(search_frame, placeholder_text="Artista (ej: Coldplay)", width=200)
+        self.entry_artist = ctk.CTkEntry(search_frame, placeholder_text="Artista (ej: Metallica)", width=200)
         self.entry_artist.pack(side="left", padx=10, pady=10)
 
-        self.entry_song = ctk.CTkEntry(search_frame, placeholder_text="Canción (ej: Yellow)", width=200)
+        self.entry_song = ctk.CTkEntry(search_frame, placeholder_text="Canción (ej: One)", width=200)
         self.entry_song.pack(side="left", padx=10, pady=10)
 
-        self.btn_search = ctk.CTkButton(search_frame, text="Buscar", font=("Helvetica", 13, "bold"),
-                                        command=self.on_search)
+        self.btn_search = ctk.CTkButton(search_frame, text="Buscar", font=("Helvetica", 13, "bold"), command=self.on_search)
         self.btn_search.pack(side="left", padx=10, pady=10)
 
         # Panel principal de contenido
@@ -52,8 +49,7 @@ class AppWindow(ctk.CTk):
         left_panel = ctk.CTkScrollableFrame(content_frame, corner_radius=15, width=420)
         left_panel.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-        self.lbl_cover = ctk.CTkLabel(left_panel, text="[ Portada ]", width=250, height=250, fg_color="#1f1f1f",
-                                      corner_radius=12)
+        self.lbl_cover = ctk.CTkLabel(left_panel, text="[ Portada ]", width=250, height=250, fg_color="#1f1f1f", corner_radius=12)
         self.lbl_cover.pack(pady=15)
 
         self.lbl_title = ctk.CTkLabel(left_panel, text="Selecciona una canción", font=("Helvetica", 18, "bold"))
@@ -68,7 +64,7 @@ class AppWindow(ctk.CTk):
         self.lbl_tags = ctk.CTkLabel(left_panel, text="", font=("Helvetica", 11), text_color="#3B82F6")
         self.lbl_tags.pack(pady=5)
 
-        # Columna Derecha: Letra
+        # Columna Derecha: Letra Sincronizada
         right_panel = ctk.CTkFrame(content_frame, corner_radius=15)
         right_panel.pack(side="right", fill="both", expand=True)
 
@@ -85,7 +81,7 @@ class AppWindow(ctk.CTk):
 
         self.btn_search.configure(state="disabled", text="Buscando...")
         self.txt_lyrics.delete("1.0", "end")
-        self.txt_lyrics.insert("1.0", "Cargando información de las 3 APIs...")
+        self.txt_lyrics.insert("1.0", "Cargando información y letra...")
 
         threading.Thread(target=self._fetch_all_data, args=(artist, song), daemon=True).start()
 
@@ -114,17 +110,27 @@ class AppWindow(ctk.CTk):
         cover_url = adb_data.get("thumb")
         if cover_url:
             threading.Thread(target=self._load_image, args=(cover_url,), daemon=True).start()
+        else:
+            self._set_fallback_cover()
 
         self.txt_lyrics.delete("1.0", "end")
         self.txt_lyrics.insert("1.0", lyrics)
 
     def _load_image(self, url: str):
         try:
-            res = requests.get(url, timeout=5)
-            img_data = Image.open(BytesIO(res.content))
-            img_data = img_data.resize((250, 250), Image.Resampling.LANCZOS)
-            ctk_img = ctk.CTkImage(light_image=img_data, dark_image=img_data, size=(250, 250))
-
-            self.after(0, lambda: self.lbl_cover.configure(image=ctk_img, text=""))
+            if url and url.startswith("http"):
+                res = requests.get(url, timeout=5)
+                if res.status_code == 200:
+                    img_data = Image.open(BytesIO(res.content))
+                    img_data = img_data.resize((250, 250), Image.Resampling.LANCZOS)
+                    ctk_img = ctk.CTkImage(light_image=img_data, dark_image=img_data, size=(250, 250))
+                    self.after(0, lambda: self.lbl_cover.configure(image=ctk_img, text=""))
+                    return
+            self._set_fallback_cover()
         except Exception:
-            pass
+            self._set_fallback_cover()
+
+    def _set_fallback_cover(self):
+        fallback_img = Image.new("RGB", (250, 250), color="#1f2937")
+        ctk_img = ctk.CTkImage(light_image=fallback_img, dark_image=fallback_img, size=(250, 250))
+        self.after(0, lambda: self.lbl_cover.configure(image=ctk_img, text="🎵 Sin Portada"))
